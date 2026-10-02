@@ -14,7 +14,7 @@ api_key = st.secrets["GEMINI_API_KEY"].strip()
 client = genai.Client(api_key=api_key)
 
 # The active production model
-MODEL_ID = "gemini-3.8-flash"
+MODEL_ID = "gemini-2.0-flash"
 
 def ask_agent(role: str, prompt: str, max_retries: int = 3) -> str:
     for attempt in range(max_retries):
