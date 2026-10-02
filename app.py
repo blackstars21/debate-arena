@@ -9,33 +9,55 @@ st.set_page_config(page_title="AI Debate Arena", page_icon="⚖️", layout="wid
 st.title("⚖️ Gemini Multi-Agent Debate Arena")
 st.caption("Two distinct Gemini agents debate a topic from isolated perspectives before a Judge issues the final verdict.")
 
-# Setup Gemini Client (Clean strip to remove any accidental spaces or hidden returns)
+# Setup Gemini Client safely
 api_key = st.secrets["GEMINI_API_KEY"].strip()
 client = genai.Client(api_key=api_key)
 
-# The active production model
-MODEL_ID = "gemini-2.0-flash"
+# High-volume, active Flash-Lite and Flash models to cycle through
+MODELS_TO_TRY = [
+    "gemini-3.8-flash"
+    "gemini-3.7-flash",
+    "gemini-3.5-flash-lite", 
+    "gemini-3.1-pro-preview"
+]
 
-def ask_agent(role: str, prompt: str, max_retries: int = 3) -> str:
-    for attempt in range(max_retries):
+def ask_agent(role: str, prompt: str) -> str:
+    last_error = None
+    
+    for model_name in MODELS_TO_TRY:
         try:
             response = client.models.generate_content(
-                model=MODEL_ID,
+                model=model_name,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     system_instruction=role,
                     temperature=0.7
                 )
             )
-            time.sleep(1.5)  # Breather between rounds
+            time.sleep(1.5)  # Breather between requests
             return response.text
-        except errors.ServerError as e:
-            if attempt < max_retries - 1:
-                time.sleep(3)
+
+        except errors.ClientError as e:
+            # Catches 429 Quota Exceeded or 404 Model Not Found
+            last_error = e
+            if "429" in str(e) or "404" in str(e):
+                st.toast(f"Switching from {model_name} due to quota/availability...", icon="🔄")
                 continue
             raise e
 
-# Input box on the page
+        except errors.ServerError as e:
+            # Catches 503 Server Busy / Capacity Spikes
+            last_error = e
+            if "503" in str(e):
+                st.toast(f"{model_name} is busy. Trying fallback model...", icon="⏳")
+                time.sleep(2)
+                continue
+            raise e
+
+    # If all models in the list fail, raise the last recorded error
+    raise last_error
+
+# User input
 question = st.text_input(
     "Enter a topic or decision to debate:",
     placeholder="e.g., Should I specialize deeply in one skill or become a broad generalist?"
@@ -50,7 +72,7 @@ if st.button("Start Debate", type="primary"):
         col1, col2 = st.columns(2)
 
         with col1:
-            with st.spinner("Debater A is thinking..."):
+            with st.spinner("Debater A (Specialist) is formulating an argument..."):
                 agent_a = ask_agent(
                     "You are Debater A: A rigorous advocate for deep specialization, elite mastery, and uncompromising standards.",
                     question
@@ -59,7 +81,7 @@ if st.button("Start Debate", type="primary"):
             st.write(agent_a)
 
         with col2:
-            with st.spinner("Debater B is thinking..."):
+            with st.spinner("Debater B (Generalist) is formulating an argument..."):
                 agent_b = ask_agent(
                     "You are Debater B: A pragmatist advocating adaptability, cross-domain thinking, speed, and versatility.",
                     question
@@ -74,7 +96,7 @@ if st.button("Start Debate", type="primary"):
         col3, col4 = st.columns(2)
 
         with col3:
-            with st.spinner("Debater A is attacking Debater B..."):
+            with st.spinner("Debater A is critiquing Debater B..."):
                 rebuttal_a = ask_agent(
                     "You are Debater A. Directly critique the opposing argument. Point out its weak assumptions and fatal flaws.",
                     f"Topic: {question}\n\nDebater B argued:\n{agent_b}"
@@ -83,7 +105,7 @@ if st.button("Start Debate", type="primary"):
             st.write(rebuttal_a)
 
         with col4:
-            with st.spinner("Debater B is attacking Debater A..."):
+            with st.spinner("Debater B is critiquing Debater A..."):
                 rebuttal_b = ask_agent(
                     "You are Debater B. Directly critique the opposing argument. Point out its weak assumptions and fatal flaws.",
                     f"Topic: {question}\n\nDebater A argued:\n{agent_a}"
@@ -95,7 +117,7 @@ if st.button("Start Debate", type="primary"):
 
         # --- ROUND 3: The Judge's Verdict ---
         st.subheader("🏆 Final Decision: The Arbiter")
-        with st.spinner("The Judge is deliberating..."):
+        with st.spinner("The Judge is synthesizing the debate..."):
             judge_prompt = f"""
             Topic: {question}
 
