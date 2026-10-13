@@ -1,31 +1,27 @@
-name: Keep Streamlit Awake
+name: Keep Streamlit App Alive
 
 on:
   schedule:
-    - cron: "0 */6 * * *"  # Runs every 6 hours
-  workflow_dispatch:        # Allows running manually
+    # Runs every 8 hours (00:00, 08:00, 16:00 UTC)
+    - cron: "0 */8 * * *"
+  workflow_dispatch: # Allows manual trigger from the GitHub Actions tab
+
+permissions:
+  contents: write
 
 jobs:
-  ping:
+  keep-alive:
     runs-on: ubuntu-latest
     steps:
-      - name: Install Playwright
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure Git
         run: |
-          pip install playwright
-          playwright install chromium
-      - name: Visit App & Click Wake If Needed
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Push Empty Commit
         run: |
-          python -c "
-          from playwright.sync_api import sync_playwright
-          with sync_playwright() as p:
-              browser = p.chromium.launch(headless=True)
-              page = browser.new_page()
-              page.goto('https://debate-arena-vhheq3eyydnsn9rkzot54u.streamlit.app', timeout=60000)
-              page.wait_for_timeout(5000)
-              # If wake button exists, click it
-              btn = page.query_selector('button:has-text(\"Yes, get this app back up!\")')
-              if btn:
-                  btn.click()
-                  page.wait_for_timeout(10000)
-              browser.close()
-          "
+          git commit --allow-empty -m "chore: keep streamlit app awake"
+          git push origin main
